@@ -6,8 +6,9 @@ for any public URL (no browser CORS limits).
 
 - **Frontend:** one static `index.html` (no build step).
 - **Backend:** one serverless function, `api/generate.js`.
-- **Generation:** uses the **OpenAI API** when `OPENAI_API_KEY` is set; otherwise falls back
-  to a built-in template so it always returns something usable.
+- **Generation:** uses **Claude (Anthropic API)** when `ANTHROPIC_API_KEY` is set, or the
+  **OpenAI API** when `OPENAI_API_KEY` is set; otherwise falls back to a built-in template so
+  it always returns something usable.
 
 ---
 
@@ -33,7 +34,7 @@ Requires **Node 18+** (for built-in `fetch`). No dependencies to install.
 
 ```bash
 # optional: enable AI-written copy
-cp .env.example .env        # then paste your key into OPENAI_API_KEY
+cp .env.example .env        # then paste your key into ANTHROPIC_API_KEY (or OPENAI_API_KEY)
 # load it into your shell (or use a tool like dotenv / direnv)
 export $(grep -v '^#' .env | xargs)
 
@@ -55,9 +56,9 @@ npm test
 1. Push this folder to a GitHub repo.
 2. In [Vercel](https://vercel.com/new), **Import** the repo. No framework preset / build
    command needed — it deploys the static page and the `api/` function automatically.
-3. (Optional but recommended) In **Project → Settings → Environment Variables**, add:
-   - `OPENAI_API_KEY` — your OpenAI API key
-   - `OPENAI_MODEL` — optional, defaults to `gpt-4o-mini`
+3. (Optional but recommended) In **Project → Settings → Environment Variables**, add ONE:
+   - `ANTHROPIC_API_KEY` — your Claude/Anthropic key (and optionally `ANTHROPIC_MODEL`, defaults to `claude-sonnet-4-6`), **or**
+   - `OPENAI_API_KEY` — your OpenAI key (and optionally `OPENAI_MODEL`, defaults to `gpt-4o-mini`)
 4. Deploy. Your app is live at `https://<your-project>.vercel.app`.
 
 > The serverless function runs server-side, so it can fetch any public partner site —

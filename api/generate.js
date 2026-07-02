@@ -1,8 +1,10 @@
 // api/generate.js — Vercel serverless function.
 // POST { url?, company?, doWhat?, audience?, partnerType? }
 // - If `url` is given, the SERVER fetches the site (no CORS limits) and reads it.
-// - If OPENAI_API_KEY is set, OpenAI writes the value props; otherwise a built-in
-//   fallback composes them. Either way you always get a usable result.
+// - For AI-written copy it uses whichever key is configured:
+//     ANTHROPIC_API_KEY  → Claude   (preferred if both are set)
+//     OPENAI_API_KEY     → OpenAI
+//   With no key it falls back to a built-in template, so it always returns something.
 
 import {
   extractFields, domainFromUrl, stripHtml,
@@ -10,6 +12,7 @@ import {
 } from '../lib/core.js';
 
 const FETCH_TIMEOUT_MS = 12000;
+const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6';
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 
 async function fetchSite(url) {
@@ -26,6 +29,40 @@ async function fetchSite(url) {
   } finally {
     clearTimeout(t);
   }
+}
+
+// Robustly pull a JSON object out of model text (handles code fences / stray prose).
+function extractJson(text = '') {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const raw = fenced ? fenced[1] : text;
+  const start = raw.indexOf('{');
+  const end = raw.lastIndexOf('}');
+  return JSON.parse(start >= 0 && end > start ? raw.slice(start, end + 1) : raw);
+}
+
+async function callClaude({ pageText, fields, partnerType }) {
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-api-key': process.env.ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model: ANTHROPIC_MODEL,
+      max_tokens: 1500,
+      system: OPENAI_SYSTEM,
+      messages: [{
+        role: 'user',
+        content: buildUserPrompt({ pageText, fields, partnerType }) +
+          '\n\nReturn ONLY the JSON object — no prose, no code fences.',
+      }],
+    }),
+  });
+  if (!res.ok) throw new Error('Anthropic API ' + res.status + ': ' + (await res.text()).slice(0, 300));
+  const data = await res.json();
+  const text = (data.content || []).map((b) => b.text || '').join('');
+  return extractJson(text);
 }
 
 async function callOpenAI({ pageText, fields, partnerType }) {
@@ -47,8 +84,7 @@ async function callOpenAI({ pageText, fields, partnerType }) {
   });
   if (!res.ok) throw new Error('OpenAI API ' + res.status + ': ' + (await res.text()).slice(0, 300));
   const data = await res.json();
-  const content = data.choices?.[0]?.message?.content || '{}';
-  return JSON.parse(content);
+  return extractJson(data.choices?.[0]?.message?.content || '{}');
 }
 
 export default async function handler(req, res) {
@@ -75,7 +111,6 @@ export default async function handler(req, res) {
         const html = await fetchSite(target);
         pageText = stripHtml(html);
         const extracted = extractFields(html, domainFromUrl(target));
-        // Manual fields (if provided) win over extracted ones.
         fields = {
           company: fields.company || extracted.company,
           doWhat: fields.doWhat || extracted.doWhat,
@@ -86,11 +121,17 @@ export default async function handler(req, res) {
       }
     }
 
-    const useOpenAI = !!process.env.OPENAI_API_KEY && (pageText || fields.company);
+    // Pick provider: Claude first, then OpenAI, else built-in template.
+    const provider = process.env.ANTHROPIC_API_KEY ? 'anthropic'
+      : process.env.OPENAI_API_KEY ? 'openai' : null;
+    const canRun = provider && (pageText || fields.company);
+
     let valueProps, source;
-    if (useOpenAI) {
+    if (canRun) {
       try {
-        const ai = await callOpenAI({ pageText, fields, partnerType });
+        const ai = provider === 'anthropic'
+          ? await callClaude({ pageText, fields, partnerType })
+          : await callOpenAI({ pageText, fields, partnerType });
         fields = {
           company: ai.company || fields.company,
           doWhat: ai.doWhat || fields.doWhat,
@@ -99,7 +140,7 @@ export default async function handler(req, res) {
         valueProps = Array.isArray(ai.valueProps) && ai.valueProps.length
           ? ai.valueProps
           : fallbackVariants({ ...fields, partnerType });
-        source = 'openai';
+        source = provider;
       } catch (e) {
         valueProps = fallbackVariants({ ...fields, partnerType });
         source = 'fallback';
@@ -107,7 +148,7 @@ export default async function handler(req, res) {
       }
     } else {
       valueProps = fallbackVariants({ ...fields, partnerType });
-      source = process.env.OPENAI_API_KEY ? 'fallback' : 'fallback-no-key';
+      source = provider ? 'fallback' : 'fallback-no-key';
     }
 
     return res.status(200).json({ fields, valueProps, source, readError });
