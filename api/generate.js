@@ -14,6 +14,7 @@ import {
 const FETCH_TIMEOUT_MS = 12000;
 const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6';
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
 
 async function fetchSite(url) {
   const ac = new AbortController();
@@ -65,27 +66,40 @@ async function callClaude({ pageText, fields, partnerType }) {
   return extractJson(text);
 }
 
-async function callOpenAI({ pageText, fields, partnerType }) {
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+// Works for any OpenAI-compatible chat API (OpenAI, Groq, OpenRouter, …).
+async function callOpenAICompatible({ url, apiKey, model, jsonMode, pageText, fields, partnerType }) {
+  const body = {
+    model,
+    temperature: 0.6,
+    messages: [
+      { role: 'system', content: OPENAI_SYSTEM },
+      {
+        role: 'user',
+        content: buildUserPrompt({ pageText, fields, partnerType }) +
+          '\n\nReturn ONLY the JSON object — no prose, no code fences.',
+      },
+    ],
+  };
+  if (jsonMode) body.response_format = { type: 'json_object' };
+  const res = await fetch(url, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-    },
-    body: JSON.stringify({
-      model: OPENAI_MODEL,
-      temperature: 0.6,
-      response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: OPENAI_SYSTEM },
-        { role: 'user', content: buildUserPrompt({ pageText, fields, partnerType }) },
-      ],
-    }),
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error('OpenAI API ' + res.status + ': ' + (await res.text()).slice(0, 300));
+  if (!res.ok) throw new Error('API ' + res.status + ': ' + (await res.text()).slice(0, 300));
   const data = await res.json();
   return extractJson(data.choices?.[0]?.message?.content || '{}');
 }
+
+const callOpenAI = (args) => callOpenAICompatible({
+  url: 'https://api.openai.com/v1/chat/completions',
+  apiKey: process.env.OPENAI_API_KEY, model: OPENAI_MODEL, jsonMode: true, ...args,
+});
+
+const callGroq = (args) => callOpenAICompatible({
+  url: 'https://api.groq.com/openai/v1/chat/completions',
+  apiKey: process.env.GROQ_API_KEY, model: GROQ_MODEL, jsonMode: false, ...args,
+});
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -121,16 +135,17 @@ export default async function handler(req, res) {
       }
     }
 
-    // Pick provider: Claude first, then OpenAI, else built-in template.
+    // Pick provider by whichever key is set. Built-in template if none.
     const provider = process.env.ANTHROPIC_API_KEY ? 'anthropic'
+      : process.env.GROQ_API_KEY ? 'groq'
       : process.env.OPENAI_API_KEY ? 'openai' : null;
     const canRun = provider && (pageText || fields.company);
 
     let valueProps, source;
     if (canRun) {
       try {
-        const ai = provider === 'anthropic'
-          ? await callClaude({ pageText, fields, partnerType })
+        const ai = provider === 'anthropic' ? await callClaude({ pageText, fields, partnerType })
+          : provider === 'groq' ? await callGroq({ pageText, fields, partnerType })
           : await callOpenAI({ pageText, fields, partnerType });
         fields = {
           company: ai.company || fields.company,

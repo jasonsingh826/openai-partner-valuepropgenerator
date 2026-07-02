@@ -120,6 +120,7 @@ async function call(payload, btn){
 function renderResults(props, source){
   if(!Array.isArray(props)) return;
   const note = source==='anthropic' ? '<span class="badge">written by Claude</span>'
+            : source==='groq' ? '<span class="badge">written by Llama · Groq</span>'
             : source==='openai' ? '<span class="badge">written by OpenAI</span>'
             : source==='fallback-no-key' ? '<span class="badge">built-in template · add an API key for AI copy</span>'
             : '<span class="badge">built-in template</span>';
