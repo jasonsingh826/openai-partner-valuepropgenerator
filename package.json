@@ -1,0 +1,15 @@
+{
+  "name": "openai-partner-valueprop",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Generate a partner × OpenAI value proposition from a website URL. Static frontend + serverless API.",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "dev": "node server.js",
+    "start": "node server.js",
+    "test": "node test/core.test.js"
+  }
+}

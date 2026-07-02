@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Partner × OpenAI — Value Proposition Generator</title>
+<style>
+  :root{--ink:#0d0d0d;--body:#1d1d1f;--muted:#6b7280;--line:#e6e6e6;--accent:#10a37f;--accent-soft:#e8f6f1;}
+  *{box-sizing:border-box}
+  body{margin:0;background:#fff;color:var(--body);
+    font-family:"OpenAI Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;line-height:1.55}
+  .page{max-width:680px;margin:0 auto;padding:48px 24px 90px}
+  .eyebrow{font-size:12px;letter-spacing:2px;text-transform:uppercase;color:var(--accent);font-weight:700}
+  h1{font-size:27px;margin:8px 0 6px;color:var(--ink);letter-spacing:-.4px}
+  .sub{color:var(--muted);font-size:15px;margin:0 0 26px}
+  label{display:block;font-size:13px;font-weight:600;color:var(--ink);margin:14px 0 6px}
+  input,select{width:100%;border:1px solid var(--line);border-radius:10px;padding:12px 13px;font-size:15px;font-family:inherit;color:var(--ink);background:#fff}
+  input:focus,select:focus{outline:none;border-color:var(--accent)}
+  .url-row{display:flex;gap:8px}.url-row input{flex:1}
+  .btn{background:var(--accent);color:#fff;border:none;border-radius:10px;padding:12px 18px;font-size:15px;font-weight:600;cursor:pointer;white-space:nowrap}
+  .btn:hover{background:#0e8e6e}.btn:disabled{opacity:.55;cursor:default}
+  .btn.big{width:100%;padding:14px;font-size:16px;margin-top:18px}
+  .btn.ghost{background:#fff;border:1px solid var(--line);color:var(--ink)}
+  .btn.sm{padding:7px 12px;font-size:12.5px;border-radius:8px}
+  .status{font-size:13px;color:var(--muted);margin-top:8px;min-height:18px}
+  .status a{color:var(--accent);font-weight:600}
+  .linkbtn{background:none;border:none;color:var(--accent);font-size:13px;font-weight:600;cursor:pointer;padding:0;margin-top:10px}
+  #fields{display:none;margin-top:8px;border-top:1px solid var(--line);padding-top:8px}
+  #fields.show{display:block}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}@media(max-width:560px){.grid{grid-template-columns:1fr}}
+  #results{margin-top:28px}
+  .vp{border:1px solid var(--line);border-radius:14px;padding:18px 18px 14px;margin-bottom:14px;position:relative}
+  .vp .tag{font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--accent);font-weight:700}
+  .vp .text{font-size:16px;color:var(--ink);margin-top:8px;line-height:1.5}
+  .vp .copy{position:absolute;top:14px;right:14px}
+  .spinner{display:inline-block;width:14px;height:14px;border:2px solid #fff;border-top-color:transparent;border-radius:50%;animation:spin .7s linear infinite;vertical-align:-2px;margin-right:6px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .badge{display:inline-block;font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:2px 9px;margin-left:8px}
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 16px;border-radius:9px;font-size:13.5px;font-weight:600;opacity:0;transition:.25s;pointer-events:none}
+  .toast.show{opacity:1}
+  .foot{margin-top:34px;border-top:1px solid var(--line);padding-top:14px;font-size:11.5px;color:#9097a1}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="eyebrow">Partner × OpenAI</div>
+  <h1>Value Proposition Generator</h1>
+  <p class="sub">Enter a partner's website and get a value proposition for their partnership with OpenAI. The site is read on the server, so it works for any public URL.</p>
+
+  <label for="url">Partner website</label>
+  <div class="url-row">
+    <input id="url" type="text" placeholder="accenture.com" />
+    <button class="btn" id="readBtn">Generate</button>
+  </div>
+  <div class="status" id="status"></div>
+  <button class="linkbtn" id="manualToggle">Or enter the details manually →</button>
+
+  <div id="fields">
+    <label for="company">Company name</label>
+    <input id="company" type="text" placeholder="e.g. Accenture" />
+    <div class="grid">
+      <div><label for="doWhat">What they do</label><input id="doWhat" type="text" placeholder="e.g. digital transformation consulting" /></div>
+      <div><label for="audience">Who they serve</label><input id="audience" type="text" placeholder="e.g. global enterprises" /></div>
+    </div>
+    <label for="partnerType">Partner type</label>
+    <select id="partnerType">
+      <option value="consultancy">Consultancy / Agency</option>
+      <option value="si">System Integrator</option>
+      <option value="reseller">Reseller / VAR</option>
+      <option value="isv">ISV / Software vendor</option>
+    </select>
+    <button class="btn big" id="regenBtn">Create value proposition →</button>
+  </div>
+
+  <div id="results"></div>
+  <div class="foot" id="foot" style="display:none">
+    Drafts combine the partner's website with OpenAI's enterprise value. Review for accuracy and secure approval before external use. Avoid implying an official partnership unless one exists.
+  </div>
+</div>
+<div class="toast" id="toast">Copied</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const API = '/api/generate';
+
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');clearTimeout(window._tt);window._tt=setTimeout(()=>t.classList.remove('show'),1400);}
+function copyText(t){navigator.clipboard.writeText(t).then(()=>toast('Copied')).catch(()=>toast('Copy failed'));}
+function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;');}
+function showFields(){$('fields').classList.add('show');}
+function fullUrl(){let u=($('url').value||'').trim();if(u&&!/^https?:\/\//i.test(u))u='https://'+u;return u;}
+function openSite(){const u=fullUrl();if(u)window.open(u,'_blank','noopener');}
+
+async function call(payload, btn){
+  const old = btn.textContent;
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Working…';
+  $('status').textContent = '';
+  try{
+    const res = await fetch(API, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    // fill fields
+    if (data.fields){
+      if (data.fields.company) $('company').value = data.fields.company;
+      if (data.fields.doWhat)  $('doWhat').value  = data.fields.doWhat;
+      if (data.fields.audience)$('audience').value= data.fields.audience;
+    }
+    showFields();
+    renderResults(data.valueProps, data.source);
+    $('status').innerHTML = data.readError
+      ? esc(data.readError) + " You can edit the details and regenerate, or <a href='#' onclick='openSite();return false;'>open the site →</a>."
+      : 'Done — review the details and regenerate any time.';
+  }catch(e){
+    $('status').innerHTML = "Something went wrong: " + esc(e.message) + ". Try entering the details manually below.";
+    showFields();
+  }finally{
+    btn.disabled = false; btn.textContent = old;
+  }
+}
+
+function renderResults(props, source){
+  if(!Array.isArray(props)) return;
+  const note = source==='openai' ? '<span class="badge">written by OpenAI</span>'
+            : source==='fallback-no-key' ? '<span class="badge">built-in template · add an API key for AI copy</span>'
+            : '<span class="badge">built-in template</span>';
+  $('results').innerHTML =
+    '<div style="font-size:13px;color:#6b7280;margin-bottom:10px">Value propositions '+note+'</div>' +
+    props.map(v=>
+      `<div class="vp">
+         <button class="btn ghost sm copy" onclick='copyText(${JSON.stringify(v.text)})'>Copy</button>
+         <div class="tag">${esc(v.tag||'')}</div>
+         <div class="text">${esc(v.text||'')}</div>
+       </div>`).join('');
+  $('foot').style.display='block';
+  $('results').scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+$('readBtn').onclick = () => {
+  const url = fullUrl();
+  if(!url){toast('Enter a website first');return;}
+  call({ url, partnerType: $('partnerType').value }, $('readBtn'));
+};
+$('url').addEventListener('keydown', e=>{ if(e.key==='Enter') $('readBtn').click(); });
+$('manualToggle').onclick = showFields;
+$('regenBtn').onclick = () => call({
+  company: $('company').value, doWhat: $('doWhat').value,
+  audience: $('audience').value, partnerType: $('partnerType').value
+}, $('regenBtn'));
+</script>
+</body>
+</html>
